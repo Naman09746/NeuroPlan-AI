@@ -1,0 +1,22 @@
+[project]
+name = "neuroplan-ai"
+version = "0.1.0"
+description = "Adaptive Study Execution Agent"
+authors = [{ name = "NeuroPlan AI Team" }]
+dynamic = ["dependencies"]
+
+[tool.setuptools]
+packages = ["backend"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.20.0",
+    "httpx>=0.23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0"
+]

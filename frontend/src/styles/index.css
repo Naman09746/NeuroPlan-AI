@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-surface-50 text-surface-900 font-sans antialiased;
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.05) 0, transparent 50%), 
+      radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.03) 0, transparent 50%);
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight text-surface-900;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-glass rounded-3xl;
+  }
+  
+  .glass-panel {
+    @apply bg-white/40 backdrop-blur-md border-r border-white/20;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 font-medium text-surface-500 hover:bg-white hover:text-primary-600 hover:shadow-sm;
+  }
+
+  .nav-link-active {
+    @apply flex items-center gap-3 px-4 py-3 rounded-2xl bg-white text-primary-600 shadow-sm font-bold;
+  }
+
+  .btn-primary {
+    @apply px-6 py-3 bg-primary-600 text-white rounded-2xl font-bold shadow-lg shadow-primary-200 hover:bg-primary-700 hover:scale-[1.02] active:scale-[0.98] transition-all;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 bg-white border border-surface-200 text-surface-700 rounded-2xl font-bold hover:bg-surface-50 hover:border-surface-300 active:scale-[0.98] transition-all;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-surface-200 rounded-full hover:bg-surface-300 transition-colors;
+}
+
+/* Animations */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.5s ease-out forwards;
+}
+
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.2s; }
+.delay-3 { animation-delay: 0.3s; }
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+

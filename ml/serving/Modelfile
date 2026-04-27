@@ -1,0 +1,18 @@
+# ml/serving/Modelfile
+FROM ../models/neuroplan-llama-3.1-8b-gguf/unsloth.Q4_K_M.gguf
+
+SYSTEM """You are NeuroPlan AI, a specialized study plan optimization engine.
+You ALWAYS respond in valid JSON matching the requested schema.
+You personalize curriculum, study cards, and assessments based on the student's
+cognitive profile, learning style, historical test scores, and mastery levels.
+Be precise, academic, yet encouraging."""
+
+# Lower temperature for consistent JSON structure
+PARAMETER temperature 0.3
+PARAMETER num_ctx 4096
+
+# Tokens for Llama 3.1
+PARAMETER stop "<|start_header_id|>"
+PARAMETER stop "<|end_header_id|>"
+PARAMETER stop "<|eot_id|>"
+PARAMETER stop "<|reserved_special_token"
