@@ -20,6 +20,7 @@ from sqlalchemy import select, desc, and_
 
 from app.models.test_session import TestSession
 from app.models.progress_log import ProgressLog
+from app.models.daily_task import DailyTask
 
 
 class MasteryEngine:
@@ -178,8 +179,10 @@ class MasteryEngine:
         """
         stmt = (
             select(ProgressLog.status)
+            .join(DailyTask, ProgressLog.task_id == DailyTask.id)
             .where(and_(
                 ProgressLog.user_id == user_id,
+                DailyTask.topic_id == topic_id
             ))
             .order_by(desc(ProgressLog.logged_at))
             .limit(10)

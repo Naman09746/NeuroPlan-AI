@@ -162,3 +162,14 @@ cython_debug/
 *.pkl
 *.zip
 *.tar.gz
+
+# Project-specific ignores
+backend/venv/
+backend/neuroplan.db
+backend/ollama.log
+ollama.log
+ml/models/
+backend/data/
+ml/data/
+*.db
+

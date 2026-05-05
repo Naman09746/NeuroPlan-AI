@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str  # Mandatory in prod
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     
     # Database
     POSTGRES_SERVER: str = "localhost"
@@ -41,9 +42,11 @@ class Settings(BaseSettings):
     # ML & RAG Settings
     CHROMADB_PATH: str = "./data/chromadb"
     DKT_MODEL_PATH: str = "./ml/models/dkt_checkpoint.pt"
+    DKT_ENABLED: bool = False
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_ENABLED: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

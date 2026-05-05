@@ -38,5 +38,46 @@ export const useStudyCardStore = create((set, get) => ({
       set({ error: 'Failed to regenerate study card', isRegenerating: false })
       throw err
     }
+  },
+
+  streamCard: async (topicId) => {
+    set({ isLoading: true, error: null })
+    try {
+      const token = localStorage.getItem('token')
+      const eventSource = new EventSource(
+        `${import.meta.env.VITE_API_URL}/study-cards/${topicId}/stream?token=${token}`
+      )
+      
+      let fullContent = ''
+      
+      eventSource.onmessage = (event) => {
+        if (event.data === '[DONE]') {
+          eventSource.close()
+          set({ isLoading: false })
+          return
+        }
+        
+        fullContent += event.data
+        try {
+          // Attempt to parse partially (this is hard for JSON, so we just store raw for now)
+          // or just show a loading indicator with "Synthesizing..."
+          set((state) => ({
+            cards: { 
+              ...state.cards, 
+              [topicId]: { ...state.cards[topicId], isStreaming: true, raw: fullContent } 
+            }
+          }))
+        } catch (e) {}
+      }
+      
+      eventSource.onerror = () => {
+        eventSource.close()
+        set({ isLoading: false })
+      }
+      
+      return eventSource
+    } catch (err) {
+      set({ error: 'Streaming failed', isLoading: false })
+    }
   }
 }))

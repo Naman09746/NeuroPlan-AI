@@ -4,6 +4,10 @@ import ProbeQuizModal from '@/components/ui/ProbeQuizModal'
 import { useAuthStore } from '@/store/useAuthStore'
 import { usePlanStore } from '@/store/usePlanStore'
 import { useTaskStore } from '@/store/useTaskStore'
+import { useAnalyticsStore } from '@/store/useAnalyticsStore'
+import { useSubjectStore } from '@/store/useSubjectStore'
+import { useConfigStore } from '@/store/useConfigStore'
+import { useCoachingStore } from '@/store/useCoachingStore'
 import { Button } from '@/components/ui/Button'
 import { Link, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
@@ -29,18 +33,27 @@ const StatCard = ({ label, value, icon: Icon, trend, delay = '' }) => (
 const DashboardPage = () => {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const { activePlan, fetchPlans, isLoading: plansLoading } = usePlanStore()
-  const { todayTasks, fetchTodayTasks, updateTaskStatus, isLoading: tasksLoading } = useTaskStore()
+  const { overview, fetchOverview } = useAnalyticsStore()
+  const { activePlan, fetchPlans, reschedulePlan, isLoading: plansLoading } = usePlanStore()
+  const { todayTasks, fetchTodayTasks, weekTasks, fetchWeekTasks, updateTaskStatus, isLoading: tasksLoading } = useTaskStore()
+  const { subjects, fetchSubjects } = useSubjectStore()
+  const { aiHealth, fetchAIHealth } = useConfigStore()
+  const { notifications, fetchNotifications, markAsRead } = useCoachingStore()
   const [isUpdating, setIsUpdating] = useState(null)
   const [probeTask, setProbeTask] = useState(null)
 
   useEffect(() => {
     fetchPlans()
+    fetchOverview()
+    fetchSubjects()
+    fetchAIHealth()
+    fetchNotifications()
   }, [])
 
   useEffect(() => {
     if (activePlan) {
       fetchTodayTasks(activePlan.id)
+      fetchWeekTasks(activePlan.id)
     }
   }, [activePlan])
 
@@ -76,20 +89,100 @@ const DashboardPage = () => {
   }
 
   if (!activePlan) {
+    const hasSubjects = subjects.length > 0
+    
     return (
-      <div className="p-10 max-w-4xl mx-auto flex flex-col items-center justify-center min-h-[80vh] text-center animate-slide-up">
-        <div className="w-24 h-24 bg-primary-50 rounded-3xl flex items-center justify-center mb-8">
-          <BookOpen className="w-12 h-12 text-primary-600" />
+      <div className="p-12 max-w-5xl mx-auto space-y-12 animate-slide-up">
+        {/* AI Status Banner */}
+        {aiHealth.status === 'offline' && (
+          <div className="bg-red-50 border-2 border-red-100 p-4 rounded-2xl flex items-center gap-4 text-red-600">
+            <AlertCircle className="w-6 h-6 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-black uppercase tracking-wider">Neural Engine Offline</p>
+              <p className="text-xs font-medium opacity-80">Local inference is disconnected. Ensure Ollama is running to generate plans.</p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={fetchAIHealth} className="bg-white border-red-200 text-red-600 hover:bg-red-50">
+              Retry Sync
+            </Button>
+          </div>
+        )}
+
+        <div className="flex flex-col md:flex-row gap-12 items-center py-12">
+          <div className="flex-1 space-y-8">
+            <div>
+              <h2 className="text-5xl font-black text-surface-900 tracking-tighter leading-tight">
+                Design Your <span className="text-primary-600 underline decoration-primary-100">Neural Network</span>
+              </h2>
+              <p className="text-surface-500 text-xl mt-4 font-medium max-w-lg">
+                Your cognitive profile is ready. Now, let's architect your knowledge base.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-4 p-4 glass-card border-emerald-100 bg-emerald-50/30">
+                <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-emerald-900 uppercase tracking-widest">Step 1: Cognitive Sync</p>
+                  <p className="text-xs text-emerald-600 font-bold">Profile initialized successfully.</p>
+                </div>
+              </div>
+
+              <Link to="/subjects" className="block group">
+                <div className={clsx(
+                  "flex items-center gap-4 p-4 glass-card transition-all group-hover:scale-[1.02]",
+                  hasSubjects ? "border-emerald-100 bg-emerald-50/30" : "border-primary-100 hover:border-primary-300"
+                )}>
+                  <div className={clsx(
+                    "w-8 h-8 rounded-full flex items-center justify-center text-white",
+                    hasSubjects ? "bg-emerald-500" : "bg-primary-500 animate-pulse"
+                  )}>
+                    {hasSubjects ? <CheckCircle2 className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                  </div>
+                  <div className="flex-1">
+                    <p className={clsx(
+                      "text-sm font-black uppercase tracking-widest",
+                      hasSubjects ? "text-emerald-900" : "text-primary-900"
+                    )}>Step 2: Subject Ingestion</p>
+                    <p className={clsx(
+                      "text-xs font-bold",
+                      hasSubjects ? "text-emerald-600" : "text-primary-500"
+                    )}>
+                      {hasSubjects ? `${subjects.length} nodes active.` : "Add your first learning subject."}
+                    </p>
+                  </div>
+                  {!hasSubjects && <ArrowRight className="w-5 h-5 text-primary-400 group-hover:translate-x-1 transition-transform" />}
+                </div>
+              </Link>
+
+              <Link to="/plan" className={clsx("block group", !hasSubjects && "opacity-50 pointer-events-none")}>
+                <div className="flex items-center gap-4 p-4 glass-card border-surface-100 hover:border-primary-300 transition-all group-hover:scale-[1.02]">
+                  <div className="w-8 h-8 bg-surface-200 rounded-full flex items-center justify-center text-white">
+                    <Zap className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-black text-surface-900 uppercase tracking-widest">Step 3: Pulse Initialization</p>
+                    <p className="text-xs text-surface-400 font-bold">Generate your AI study schedule.</p>
+                  </div>
+                  <ArrowRight className="w-5 h-5 text-surface-300 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </Link>
+            </div>
+          </div>
+
+          <div className="w-full md:w-[400px] aspect-square bg-gradient-to-br from-primary-50 to-indigo-50 rounded-[4rem] flex items-center justify-center relative overflow-hidden">
+             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+             <BookOpen className="w-32 h-32 text-primary-200 relative z-10 animate-float" />
+             <div className="absolute bottom-12 left-12 right-12 glass-card p-6 bg-white/80">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-2 h-2 bg-primary-500 rounded-full animate-ping"></div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary-600">Neural status</span>
+                </div>
+                <p className="text-xs font-bold text-surface-900">Waiting for first ingestion signal...</p>
+             </div>
+          </div>
         </div>
-        <h2 className="text-4xl font-black text-surface-900 mb-4 tracking-tighter">Your Mind is a Blank Slate</h2>
-        <p className="text-surface-500 text-lg mb-10 max-w-md font-medium">
-          You haven't initialized a study plan yet. Ready to optimize your learning journey with AI-driven precision?
-        </p>
-        <Link to="/plan">
-          <Button className="scale-110">
-            Initialize New Plan <ArrowRight className="w-5 h-5" />
-          </Button>
-        </Link>
       </div>
     )
   }
@@ -111,7 +204,7 @@ const DashboardPage = () => {
           <div className="text-right">
             <div className="text-[10px] font-black text-surface-400 mb-1 uppercase tracking-[0.2em]">Current Streak</div>
             <div className="flex items-center gap-3 justify-end">
-              <span className="text-3xl font-black text-surface-900 tabular-nums">12</span>
+              <span className="text-3xl font-black text-surface-900 tabular-nums">{overview?.streak || 0}</span>
               <Flame className="w-8 h-8 text-orange-500 fill-orange-500 animate-bounce" />
             </div>
           </div>
@@ -128,9 +221,9 @@ const DashboardPage = () => {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard label="Phase Mastery" value={`${progress}%`} icon={Target} trend="+5%" delay="delay-1" />
-        <StatCard label="Neural Load" value="4.2 hrs" icon={Clock} delay="delay-2" />
-        <StatCard label="Tasks Logged" value={completedCount} icon={CheckCircle2} delay="delay-3" />
+        <StatCard label="Phase Mastery" value={`${overview?.completion_rate || 0}%`} icon={Target} trend="+5%" delay="delay-1" />
+        <StatCard label="Neural Load" value={`${overview?.total_hours || 0} hrs`} icon={Clock} delay="delay-2" />
+        <StatCard label="Tasks Logged" value={overview?.completed_tasks || 0} icon={CheckCircle2} delay="delay-3" />
         <StatCard label="Active Nodes" value={todayTasks.length} icon={BookOpenCheck} delay="delay-4" />
       </div>
 
@@ -211,6 +304,57 @@ const DashboardPage = () => {
           </div>
         </div>
 
+        {/* Weekly Calendar (Mobile & Desktop) */}
+        <div className="lg:col-span-3 space-y-8 animate-slide-up delay-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-2xl font-black text-surface-900 tracking-tight">Weekly Knowledge Circuit</h3>
+            <div className="text-xs font-bold text-surface-400 uppercase tracking-widest">Next 7 Days</div>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+             {Array.from({ length: 7 }).map((_, i) => {
+               const date = new Date()
+               date.setDate(date.getDate() + i)
+               const dateStr = date.toISOString().split('T')[0]
+               const dayTasks = weekTasks.filter(t => t.scheduled_date === dateStr)
+               const isToday = i === 0
+               
+               return (
+                 <div key={dateStr} className={clsx(
+                   "glass-card p-4 flex flex-col items-center gap-4 transition-all hover:scale-[1.02]",
+                   isToday ? "border-primary-200 bg-primary-50/20" : "opacity-80"
+                 )}>
+                   <div className="text-center">
+                     <div className="text-[10px] font-black text-surface-400 uppercase tracking-widest">{date.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                     <div className={clsx(
+                       "text-lg font-black mt-1",
+                       isToday ? "text-primary-600" : "text-surface-900"
+                     )}>{date.getDate()}</div>
+                   </div>
+                   
+                   <div className="w-full space-y-2">
+                     {dayTasks.length > 0 ? (
+                       dayTasks.map(t => (
+                         <div key={t.id} className="group/task relative">
+                           <div className={clsx(
+                             "h-1.5 w-full rounded-full transition-all",
+                             t.status === 'done' ? "bg-emerald-400" : "bg-primary-300"
+                           )} title={t.topic_name} />
+                           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-900 text-white text-[10px] rounded opacity-0 group-hover/task:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                             {t.topic_name}
+                           </div>
+                         </div>
+                       ))
+                     ) : (
+                       <div className="h-1.5 w-full rounded-full bg-surface-100" />
+                     )}
+                   </div>
+                 </div>
+               )
+             })}
+          </div>
+        </div>
+
         {/* Weekly Insights (Narrow Column) */}
         <div className="space-y-8 animate-slide-up delay-3">
           <h3 className="text-2xl font-black text-surface-900 tracking-tight">Neural Sync</h3>
@@ -232,11 +376,17 @@ const DashboardPage = () => {
                 </Button>
                 <Button 
                   variant="secondary" 
-                  onClick={() => toast.promise(new Promise(r => setTimeout(r, 1000)), {
-                    loading: 'Recalculating Neural Spacing...',
-                    success: 'Schedule Optimized',
-                    error: 'Optimization Failed'
-                  })}
+                  onClick={() => {
+                    toast.promise(reschedulePlan(activePlan.id), {
+                      loading: 'Recalculating Neural Spacing...',
+                      success: () => {
+                        fetchTodayTasks(activePlan.id)
+                        fetchOverview()
+                        return 'Schedule Optimized'
+                      },
+                      error: 'Optimization Failed'
+                    })
+                  }}
                   className="w-full justify-between py-6 group bg-white/50"
                 >
                   <span>Adaptive Reschedule</span>
@@ -258,15 +408,69 @@ const DashboardPage = () => {
              </div>
           </div>
 
-          <div className="glass-card p-8 bg-primary-600 text-white overflow-hidden relative">
-             <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
-             <h4 className="text-xl font-black mb-2 tracking-tight">Neural Insight</h4>
-             <p className="text-primary-100 text-sm font-medium leading-relaxed mb-6">
-               Your retention data is currently being synthesized. Complete tasks to reveal deep insights.
-             </p>
-             <button className="text-xs font-black uppercase tracking-widest text-white/80 hover:text-white transition-colors">
-               Acknowledge Feedback
-             </button>
+          {/* AI Coach Section */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-black text-surface-900 tracking-tight flex items-center gap-2">
+                <Zap className="w-5 h-5 text-primary-600" />
+                AI Coach
+              </h3>
+              {notifications.some(n => !n.is_read) && (
+                <span className="flex h-2 w-2 rounded-full bg-primary-600 animate-pulse"></span>
+              )}
+            </div>
+            
+            <div className="space-y-4">
+              {notifications.length > 0 ? (
+                notifications.map((note) => (
+                  <div 
+                    key={note.id} 
+                    className={clsx(
+                      "glass-card p-6 transition-all duration-300 relative overflow-hidden group border-l-4",
+                      note.is_read ? "opacity-70 grayscale-[0.5] border-surface-200" : "border-primary-600 bg-primary-50/20"
+                    )}
+                  >
+                    {!note.is_read && (
+                      <div className="absolute top-4 right-4">
+                        <button 
+                          onClick={() => markAsRead(note.id)}
+                          className="text-[10px] font-black uppercase tracking-widest text-primary-600 hover:text-primary-700"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
+                    <h4 className="text-sm font-black text-surface-900 uppercase tracking-widest mb-2 flex items-center gap-2">
+                      {note.trigger_type.replace('_', ' ')}
+                    </h4>
+                    <p className="text-sm font-medium text-surface-600 leading-relaxed mb-4">
+                      {note.message}
+                    </p>
+                    {note.priority_topics?.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {note.priority_topics.map(topic => (
+                          <span key={topic} className="text-[10px] font-bold bg-white border border-primary-100 text-primary-700 px-2 py-1 rounded-md">
+                            {topic}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="bg-white/50 rounded-xl p-3 border border-surface-100">
+                      <p className="text-[10px] font-black text-surface-400 uppercase tracking-widest mb-1">Coach Note</p>
+                      <p className="text-xs font-bold text-surface-900 italic">"{note.motivational_note}"</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="glass-card p-8 bg-primary-600 text-white overflow-hidden relative">
+                   <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
+                   <h4 className="text-xl font-black mb-2 tracking-tight">Neural Sync Active</h4>
+                   <p className="text-primary-100 text-sm font-medium leading-relaxed">
+                     Your retention data is being synthesized. Complete a test or skip a task to trigger adaptive coaching insights.
+                   </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -62,3 +62,19 @@ async def regenerate_study_card(
         "practice_problems": card.practice_problems,
         "generated_at": card.generated_at.isoformat(),
     }
+
+@router.get("/{topic_id}/stream")
+async def stream_study_card(
+    topic_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Stream the AI generation of a study card."""
+    from fastapi.responses import StreamingResponse
+    service = StudyCardService(db)
+    
+    # We'll need a way to stream from the service
+    return StreamingResponse(
+        service.stream_generation(topic_id, current_user.id),
+        media_type="text/event-stream"
+    )

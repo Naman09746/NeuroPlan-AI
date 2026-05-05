@@ -1,6 +1,6 @@
 from datetime import timedelta
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -10,14 +10,16 @@ from app.core import security
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserBase
 from app.api import deps
+from app.core.limiter import limiter
 
 router = APIRouter()
 
 @router.post("/register", response_model=UserResponse)
+@limiter.limit("5/minute")
 async def register(
-    *,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user_in: UserCreate
+    user_in: UserCreate = None
 ) -> Any:
     """Register a new user."""
     result = await db.execute(select(User).where(User.email == user_in.email))
@@ -39,7 +41,9 @@ async def register(
     return db_obj
 
 @router.post("/login")
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:

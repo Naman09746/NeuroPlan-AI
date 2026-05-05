@@ -25,22 +25,28 @@ No OpenAI. No Groq. Your own model.
 # ============================================================================
 # CELL 2: IMPORTS & CONFIG
 # ============================================================================
-import json
 import os
+# CRITICAL: This must run before any ML imports (like torch or datasets) to avoid multi-GPU conflicts
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True" # Prevents memory fragmentation OOMs
+
+import json
+import gc
+import torch
 from datasets import Dataset
 
 # Training configuration — optimized for Kaggle T4 x2
 CONFIG = {
     "base_model": "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
-    "max_seq_length": 4096,
-    "lora_r": 32,
-    "lora_alpha": 32,
-    "lora_dropout": 0.05,
+    "max_seq_length": 2048, # Increased to prevent shape mismatch errors from truncating sequences
+    "lora_r": 16,
+    "lora_alpha": 16,
+    "lora_dropout": 0,
     "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     "learning_rate": 2e-4,
     "epochs": 3,
-    "batch_size": 4,
-    "gradient_accumulation_steps": 2,  # Effective batch = 8
+    "batch_size": 1,
+    "gradient_accumulation_steps": 8,  # Effective batch = 8
     "warmup_ratio": 0.05,
     "weight_decay": 0.01,
     "output_dir": "/kaggle/working/neuroplan-model",
@@ -54,11 +60,18 @@ CONFIG = {
 def load_model():
     from unsloth import FastLanguageModel
     
+    # Aggressively clear RAM and VRAM before loading
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+        
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=CONFIG["base_model"],
         max_seq_length=CONFIG["max_seq_length"],
         dtype=None,  # Auto-detect
         load_in_4bit=True,
+        device_map={"": 0},  # CRITICAL: Forces model onto the single 16GB GPU to avoid CPU offload crash
     )
     
     # Apply LoRA adapters
@@ -74,7 +87,7 @@ def load_model():
     )
     
     print(f"✅ Model loaded: {CONFIG['base_model']}")
-    print(f"   Trainable parameters: {model.print_trainable_parameters()}")
+    model.print_trainable_parameters()
     
     return model, tokenizer
 
@@ -85,8 +98,27 @@ def load_model():
 def load_dataset(tokenizer):
     """Load JSONL and convert to Llama-3.1 chat template format."""
     
+    dataset_path = CONFIG["dataset_path"]
+    
+    # Auto-detect path if it's incorrect or if it's a directory
+    if not os.path.isfile(dataset_path):
+        found = False
+        if os.path.exists("/kaggle/input"):
+            for root, dirs, files in os.walk("/kaggle/input"):
+                for file in files:
+                    if file.endswith(".jsonl"):
+                        dataset_path = os.path.join(root, file)
+                        found = True
+                        break
+                if found: break
+                
+        if not found:
+            raise FileNotFoundError(f"Could not find a .jsonl file at {dataset_path} or in /kaggle/input")
+            
+    print(f"📂 Using dataset from: {dataset_path}")
+    
     samples = []
-    with open(CONFIG["dataset_path"], "r") as f:
+    with open(dataset_path, "r") as f:
         for line in f:
             if line.strip():
                 samples.append(json.loads(line))
@@ -140,6 +172,8 @@ def train(model, tokenizer, dataset):
             warmup_ratio=CONFIG["warmup_ratio"],
             num_train_epochs=CONFIG["epochs"],
             learning_rate=CONFIG["learning_rate"],
+            optim="paged_adamw_8bit",  # MASSIVE memory savings + Pages to CPU RAM
+            max_grad_norm=0.3, # Prevents exploding gradients
             fp16=not is_bfloat16_supported(),
             bf16=is_bfloat16_supported(),
             logging_steps=10,
@@ -176,6 +210,12 @@ def train(model, tokenizer, dataset):
 def evaluate(model, tokenizer, dataset):
     """Run inference on eval samples and check JSON quality."""
     from unsloth import FastLanguageModel
+    
+    # Clear memory before evaluation
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        
     FastLanguageModel.for_inference(model)
     
     eval_samples = dataset["test"].select(range(min(20, len(dataset["test"]))))
@@ -222,26 +262,37 @@ def evaluate(model, tokenizer, dataset):
 # ============================================================================
 def export_gguf(model, tokenizer):
     """Export to GGUF Q4_K_M format for Ollama serving."""
+    import shutil
+    import glob
     
-    output_path = "/kaggle/working/neuroplan-llama-3.1-8b-gguf"
+    # We use /tmp/ because Kaggle limits /kaggle/working to 19.5GB.
+    # The intermediate 16-bit model takes 16GB, which crashes Kaggle.
+    # /tmp/ has 50GB+ of free space!
+    tmp_output_path = "/tmp/neuroplan-llama-3.1-8b"
     
-    print(f"\n📦 Exporting to GGUF (Q4_K_M)...")
-    print(f"   Output: {output_path}")
+    print(f"\n📦 Exporting to GGUF (Q4_K_M)... (Bypassing 20GB limit via /tmp/)")
     
     model.save_pretrained_gguf(
-        output_path,
+        tmp_output_path,
         tokenizer,
         quantization_method="q4_k_m",
     )
     
-    # List output files
-    for f in os.listdir(output_path):
-        size = os.path.getsize(os.path.join(output_path, f))
-        print(f"   {f}: {size / (1024*1024):.1f} MB")
+    print(f"\n🚚 Moving the final 5GB GGUF file to Kaggle Working directory...")
     
-    print(f"\n✅ GGUF export complete!")
-    print(f"   Download from Kaggle Output and place in: ml/models/")
-    print(f"   Then run: ollama create neuroplan -f ml/serving/Modelfile")
+    # Find the generated .gguf file in /tmp/ or its subdirectories
+    gguf_files = glob.glob(f"{tmp_output_path}**/*.gguf", recursive=True)
+    if gguf_files:
+        gguf_file_path = gguf_files[0]
+        final_dest = "/kaggle/working/neuroplan-model-final.gguf"
+        shutil.move(gguf_file_path, final_dest)
+        
+        print(f"✅ GGUF export complete!")
+        print(f"   Size: {os.path.getsize(final_dest) / (1024*1024):.1f} MB")
+        print(f"   Download from Kaggle Output and place in: ml/models/")
+        print(f"   Then run: ollama create neuroplan -f ml/serving/Modelfile")
+    else:
+        print("❌ Error: Could not find the generated GGUF file in /tmp/")
 
 
 # ============================================================================
@@ -281,3 +332,22 @@ if __name__ == "__main__":
     print("4. Test: python3 -m ml.serving.health_check")
     print("5. Set USE_CUSTOM_AI=true in backend/.env")
     print("=" * 60)
+
+# ============================================================================
+# CELL 8: DOWNLOAD FINISHED MODEL
+# ============================================================================
+# ⚠️ INSTRUCTIONS: Copy the code below into a NEW Kaggle cell. 
+# Run it AFTER the main pipeline above has finished to download your model.
+"""
+import os
+from IPython.display import display, FileLink
+
+gguf_file = "neuroplan-model-final.gguf"
+
+if os.path.exists(gguf_file):
+    print("✅ Model found!")
+    print("⬇️ Click the link below to download your model directly to your Mac:")
+    display(FileLink(gguf_file))
+else:
+    print("❌ Error: Could not find neuroplan-model-final.gguf")
+"""

@@ -1,6 +1,9 @@
 import React, { useState } from 'react'
 import { Brain, Zap, Target, BookOpen, ChevronRight, Check } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import apiClient from '../api/client'
+import { useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 
 const steps = [
     {
@@ -28,19 +31,32 @@ const steps = [
 ]
 
 const OnboardingWizardPage = () => {
+    const navigate = useNavigate()
     const [currentStep, setCurrentStep] = useState(0)
     const [selections, setSelections] = useState({})
+    const [isSaving, setIsSaving] = useState(false)
 
     const handleSelect = (optionId) => {
         setSelections({ ...selections, [steps[currentStep].id]: optionId })
     }
 
-    const nextStep = () => {
+    const nextStep = async () => {
         if (currentStep < steps.length - 1) {
             setCurrentStep(currentStep + 1)
         } else {
-            console.log('Onboarding Complete:', selections)
-            // Redirect to dashboard
+            setIsSaving(true)
+            try {
+                await apiClient.put('/users/me/preferences', {
+                    learning_style: selections.style,
+                    focus_metabolism: selections.focus
+                })
+                toast.success('Neural profile synchronized!')
+                navigate('/subjects')
+            } catch (err) {
+                toast.error('Failed to sync profile')
+            } finally {
+                setIsSaving(false)
+            }
         }
     }
 
@@ -95,8 +111,9 @@ const OnboardingWizardPage = () => {
                         ))}
                     </div>
                     <Button 
-                        disabled={!selections[step.id]}
+                        disabled={!selections[step.id] || isSaving}
                         onClick={nextStep}
+                        isLoading={isSaving}
                         className="h-14 px-8 bg-surface-900 hover:bg-black group"
                     >
                         {currentStep === steps.length - 1 ? 'Activate Engine' : 'Next Integration'}

@@ -24,12 +24,17 @@ const SubjectCard = ({ subject, active, onClick, topicCount = 0 }) => (
           <div className="w-3 h-3 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.1)]" style={{ backgroundColor: subject.color }} />
         </div>
         <div>
-          <h4 className={clsx(
-             "font-black tracking-tight uppercase text-sm group-hover:text-primary-600 transition-colors",
-             active ? "text-primary-600" : "text-surface-900"
-          )}>
-              {subject.name}
-          </h4>
+          <div className="flex items-center gap-2">
+            <h4 className={clsx(
+               "font-black tracking-tight uppercase text-sm group-hover:text-primary-600 transition-colors",
+               active ? "text-primary-600" : "text-surface-900"
+            )}>
+                {subject.name}
+            </h4>
+            <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md bg-surface-100 text-surface-500 border border-surface-200">
+              {subject.target_level}
+            </span>
+          </div>
           <p className="text-[10px] font-black text-surface-400 mt-1 uppercase tracking-widest">{topicCount} Neural Nodes</p>
         </div>
       </div>
@@ -46,6 +51,7 @@ const CurriculumPage = () => {
     const [isQuickSetupOpen, setIsQuickSetupOpen] = useState(false)
     const [newSubjectName, setNewSubjectName] = useState('')
     const [newSubjectColor, setNewSubjectColor] = useState('#6366f1')
+    const [targetLevel, setTargetLevel] = useState('intermediate')
     const [bulkTopicsText, setBulkTopicsText] = useState('')
     const [decomposeContext, setDecomposeContext] = useState('')
     const [isImporting, setIsImporting] = useState(false)
@@ -63,8 +69,9 @@ const CurriculumPage = () => {
     const handleCreateSubject = async (e) => {
         e.preventDefault()
         try {
-            const subject = await createSubject(newSubjectName, newSubjectColor)
+            const subject = await createSubject(newSubjectName, newSubjectColor, targetLevel)
             setNewSubjectName('')
+            setTargetLevel('intermediate')
             setIsAddingSubject(false)
             setSelectedSubject(subject)
             toast.success('Subject initialized')
@@ -158,6 +165,21 @@ const CurriculumPage = () => {
                                 required
                                 autoFocus
                             />
+                            
+                            <div className="space-y-1.5">
+                                <label className="text-sm font-bold text-surface-700 ml-1">Expertise Goal</label>
+                                <select 
+                                    className="w-full bg-white/50 border-2 border-surface-100 rounded-2xl p-3 text-sm font-bold focus:border-primary-500 outline-none transition-all cursor-pointer"
+                                    value={targetLevel}
+                                    onChange={e => setTargetLevel(e.target.value)}
+                                >
+                                    <option value="beginner">Beginner (Fundamentals)</option>
+                                    <option value="intermediate">Intermediate (Standard)</option>
+                                    <option value="advanced">Advanced (Deep Dive)</option>
+                                    <option value="expert">Expert (Research Level)</option>
+                                </select>
+                            </div>
+
                             <div className="space-y-1.5">
                                 <label className="text-sm font-bold text-surface-700 ml-1">Color Marker</label>
                                 <div className="flex gap-2">
@@ -188,7 +210,7 @@ const CurriculumPage = () => {
                                 key={s.id} 
                                 subject={s} 
                                 active={selectedSubject?.id === s.id}
-                                topicCount={topicsBySubject[s.id]?.length || 0}
+                                topicCount={s.topic_count || (topicsBySubject[s.id]?.length || 0)}
                                 onClick={() => setSelectedSubject(s)} 
                             />
                         ))}
@@ -304,24 +326,23 @@ const CurriculumPage = () => {
                                         <h4 className="text-xs font-black text-surface-400 uppercase tracking-[0.3em]">Managed Concepts</h4>
                                         <span className="text-[10px] font-black text-primary-600 bg-primary-100 px-2 py-0.5 rounded-full">{topicsBySubject[selectedSubject.id]?.length || 0} TOTAL</span>
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 gap-4">
                                         {(topicsBySubject[selectedSubject.id] || []).map(topic => (
                                             <div 
                                                 key={topic.id} 
-                                                onClick={() => setSelectedTopic(topic)}
-                                                className="group bg-white p-6 rounded-[32px] border-2 border-surface-50 hover:border-primary-100 hover:shadow-2xl hover:shadow-primary-100/20 transition-all cursor-pointer relative overflow-hidden"
+                                                className="group bg-white p-6 rounded-[32px] border-2 border-surface-50 hover:border-primary-100 hover:shadow-2xl hover:shadow-primary-100/20 transition-all relative overflow-hidden"
                                             >
-                                                <div className="flex items-center justify-between relative z-10">
+                                                <div className="flex items-center justify-between relative z-10 cursor-pointer" onClick={() => setSelectedTopic(topic)}>
                                                     <div className="flex items-center gap-4">
                                                         <div 
-                                                            className="w-10 h-10 rounded-2xl flex items-center justify-center text-white"
+                                                            className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shrink-0"
                                                             style={{ backgroundColor: selectedSubject.color }}
                                                         >
                                                             <BookOpen className="w-5 h-5" />
                                                         </div>
                                                         <div>
                                                             <h4 className="font-bold text-surface-900 group-hover:text-primary-600 transition-colors">{topic.name}</h4>
-                                                            <div className="flex items-center gap-2 mt-1">
+                                                            <div className="flex items-center gap-2 mt-1 flex-wrap">
                                                                 <span className={clsx(
                                                                     "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
                                                                     topic.difficulty === 'hard' ? "bg-red-50 text-red-500 border-red-100" :
@@ -339,12 +360,29 @@ const CurriculumPage = () => {
                                                                      {topic.prerequisites.length} Prereqs
                                                                   </span>
                                                                 )}
+                                                                {topic.key_concepts?.length > 0 && (
+                                                                  <span className="text-[9px] font-black text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full border border-primary-100">
+                                                                     {topic.key_concepts.length} Subtopics
+                                                                  </span>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <ChevronRight className="w-5 h-5 text-surface-200 group-hover:text-primary-400 group-hover:translate-x-1 transition-all" />
+                                                    <ChevronRight className="w-5 h-5 text-surface-200 group-hover:text-primary-400 group-hover:translate-x-1 transition-all shrink-0" />
                                                 </div>
                                                 
+                                                {/* Subtopics / Key Concepts */}
+                                                {topic.key_concepts?.length > 0 && (
+                                                  <div className="mt-4 ml-14 space-y-1.5">
+                                                    {topic.key_concepts.map((concept, i) => (
+                                                      <div key={i} className="flex items-start gap-2 text-sm text-surface-600">
+                                                        <span className="text-primary-400 mt-0.5 shrink-0">›</span>
+                                                        <span className="leading-snug">{concept}</span>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                )}
+
                                                 {/* Progress Bar Mini */}
                                                 <div className="mt-4 h-1.5 w-full bg-surface-50 rounded-full overflow-hidden">
                                                     <div 

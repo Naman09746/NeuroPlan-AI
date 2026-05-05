@@ -1,9 +1,15 @@
 import torch
 import os
+import logging
 from ml.knowledge_tracing.model import DKTModel
+
+logger = logging.getLogger("neuroplan.dkt")
+
+_DKT_WARNING_SHOWN = False
 
 class DKTPredictor:
     def __init__(self, checkpoint_path, num_topics):
+        global _DKT_WARNING_SHOWN
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.num_topics = num_topics
         self.model = DKTModel(num_topics).to(self.device)
@@ -11,9 +17,10 @@ class DKTPredictor:
         if os.path.exists(checkpoint_path):
             self.model.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
             self.model.eval()
-            print("✅ DKT Model loaded successfully.")
-        else:
-            print(f"⚠️ DKT Checkpoint not found at {checkpoint_path}. Using untrained model.")
+            logger.info("✅ DKT Model loaded successfully.")
+        elif not _DKT_WARNING_SHOWN:
+            logger.info("ℹ️  DKT checkpoint not found — using default mastery (0.5). This is normal for first-time setup.")
+            _DKT_WARNING_SHOWN = True
 
     def predict_mastery(self, interaction_history: list) -> dict:
         """

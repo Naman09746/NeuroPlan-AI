@@ -16,7 +16,7 @@ async def test_groq():
 
     print("Testing Subject Decomposition...")
     try:
-        results = await ai.decompose_subject(subject_name="Basic Mathematics")
+        results = await ai.decompose_subject(subject_name="Basic Mathematics", profile="Beginner level student")
         if results:
             print(f"Success! Found {len(results)} subtopics.")
             print(f"First subtopic: {results[0]['name']}")

@@ -7,6 +7,7 @@ from app.models.progress_log import ProgressLog
 from app.models.reschedule_event import RescheduleEvent
 from app.models.test_session import TestSession
 from app.models.study_card import StudyCard
+from app.models.coaching_event import CoachingEvent
 
 # All models must be imported here for Alembic to detect them
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "ProgressLog",
     "RescheduleEvent",
     "TestSession",
-    "StudyCard"
+    "StudyCard",
+    "CoachingEvent"
 ]

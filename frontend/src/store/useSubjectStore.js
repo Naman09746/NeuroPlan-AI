@@ -18,9 +18,9 @@ export const useSubjectStore = create((set, get) => ({
     }
   },
 
-  createSubject: async (name, color) => {
+  createSubject: async (name, color, target_level = 'intermediate') => {
     try {
-      const response = await apiClient.post('/subjects/', { name, color })
+      const response = await apiClient.post('/subjects/', { name, color, target_level })
       set((state) => ({ subjects: [...state.subjects, response.data] }))
       return response.data
     } catch (err) {

@@ -41,5 +41,20 @@ export const usePlanStore = create((set, get) => ({
     }
   },
 
-  setActivePlan: (plan) => set({ activePlan: plan })
+  setActivePlan: (plan) => set({ activePlan: plan }),
+
+  reschedulePlan: async (planId) => {
+    set({ isLoading: true, error: null })
+    try {
+      const response = await apiClient.post(`/reschedule/${planId}/reschedule`)
+      set({ isLoading: false })
+      return response.data
+    } catch (err) {
+      set({ 
+        error: err.response?.data?.detail || 'Rescheduling failed', 
+        isLoading: false 
+      })
+      throw err
+    }
+  }
 }))

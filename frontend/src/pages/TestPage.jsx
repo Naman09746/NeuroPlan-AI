@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Brain, Clock, ChevronRight, CheckCircle2, XCircle, Award, ArrowRight, Zap } from 'lucide-react'
+import { Brain, Clock, ChevronRight, CheckCircle2, XCircle, Award, ArrowRight, Zap, AlertCircle } from 'lucide-react'
 import { useTestStore } from '@/store/useTestStore'
 import { Button } from '@/components/ui/Button'
 import { clsx } from 'clsx'
@@ -73,7 +73,11 @@ const TestPage = () => {
         correctCount,
         totalCount: questions.length,
         score: response.score_percentage * 100,
-        newMastery: response.new_mastery * 100
+        newMastery: response.new_mastery * 100,
+        wrongAnswers: questions.filter((q, i) => selectedAnswers[i] !== q.correct_index).map((q, i) => ({
+            ...q,
+            selected_index: selectedAnswers[activeTest.questions.indexOf(q)]
+        }))
       })
       toast.success('Cognitive synchronization complete!')
     } catch (err) {
@@ -81,7 +85,7 @@ const TestPage = () => {
     }
   }
 
-  if (isLoading || !activeTest) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-surface-50 flex flex-col items-center justify-center p-10">
         <div className="w-20 h-20 bg-primary-50 rounded-3xl flex items-center justify-center mb-8 animate-bounce">
@@ -89,6 +93,22 @@ const TestPage = () => {
         </div>
         <h2 className="text-2xl font-black text-surface-900 tracking-tight mb-2">Extracting Neural Patterns...</h2>
         <p className="text-surface-400 font-bold uppercase tracking-widest text-xs animate-pulse">Initializing adaptive assessment</p>
+      </div>
+    )
+  }
+
+  if (!activeTest || !activeTest.questions || activeTest.questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-surface-50 flex flex-col items-center justify-center p-10 text-center">
+        <div className="w-20 h-20 bg-red-50 rounded-3xl flex items-center justify-center mb-8">
+            <XCircle className="w-10 h-10 text-red-600" />
+        </div>
+        <h2 className="text-2xl font-black text-surface-900 tracking-tight mb-2">Neural Logic Failure</h2>
+        <p className="text-surface-500 font-medium max-w-md mb-8">
+          The inference engine failed to generate an assessment for this topic. 
+          Ensure your Neural Engine (Ollama) is active.
+        </p>
+        <Button onClick={() => navigate('/dashboard')} variant="secondary">Return to Dashboard</Button>
       </div>
     )
   }
@@ -125,6 +145,36 @@ const TestPage = () => {
                 <Button onClick={() => navigate('/')} className="w-full py-4 text-base">Return to Dash Flow</Button>
                 <Button variant="secondary" onClick={() => navigate('/analytics')} className="w-full py-4 text-base bg-white">View Neural Insights</Button>
             </div>
+
+            {results.wrongAnswers?.length > 0 && (
+                <div className="pt-12 text-left space-y-8">
+                    <h3 className="text-xl font-black text-surface-900 tracking-tight flex items-center gap-3">
+                        <AlertCircle className="w-6 h-6 text-red-500" />
+                        Correction Protocol Required
+                    </h3>
+                    <div className="space-y-6">
+                        {results.wrongAnswers.map((q, i) => (
+                            <div key={i} className="p-8 bg-white border-2 border-red-100 rounded-[32px] space-y-4">
+                                <p className="font-bold text-surface-900 leading-snug">{q.text}</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="p-3 bg-red-50 rounded-xl">
+                                        <p className="text-[9px] font-black text-red-400 uppercase tracking-widest mb-1">Your Answer</p>
+                                        <p className="text-xs font-bold text-red-600">{q.options[q.selected_index] || 'No Answer'}</p>
+                                    </div>
+                                    <div className="p-3 bg-emerald-50 rounded-xl">
+                                        <p className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-1">Correct Answer</p>
+                                        <p className="text-xs font-bold text-emerald-600">{q.options[q.correct_index]}</p>
+                                    </div>
+                                </div>
+                                <div className="p-4 bg-surface-50 rounded-2xl">
+                                    <p className="text-[9px] font-black text-surface-400 uppercase tracking-widest mb-1">AI Explanation</p>
+                                    <p className="text-xs text-surface-600 leading-relaxed font-medium">{q.explanation}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
       </div>
     )
@@ -176,12 +226,12 @@ const TestPage = () => {
              <div className="space-y-4 animate-slide-up">
                  <span className="text-[10px] font-black text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest">Question {currentQuestionIndex + 1} of {activeTest.questions.length}</span>
                  <h2 className="text-4xl font-black text-surface-900 tracking-tight leading-tight">
-                    {currentQuestion.text}
+                    {currentQuestion?.text || 'Analyzing Concept...'}
                  </h2>
              </div>
 
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up delay-1">
-                {currentQuestion.options.map((option, i) => (
+                {currentQuestion?.options?.map((option, i) => (
                     <button
                         key={i}
                         onClick={() => handleAnswerSelect(i)}

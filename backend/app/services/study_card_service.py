@@ -98,3 +98,24 @@ class StudyCardService:
             await self.db.commit()
 
         return await self.get_or_generate(topic_id, user_id)
+
+    async def stream_generation(self, topic_id: UUID, user_id: UUID):
+        """Stream the AI generation process."""
+        # 1. Fetch topic and context
+        topic_stmt = select(Topic).options(selectinload(Topic.subject)).where(Topic.id == topic_id)
+        topic_res = await self.db.execute(topic_stmt)
+        topic = topic_res.scalar_one_or_none()
+        if not topic or topic.subject.user_id != user_id:
+            yield "data: Error: Unauthorized or Topic not found\n\n"
+            return
+
+        profile_summary = await self.profiler.get_user_cognitive_profile(user_id)
+        topic_mastery = await self.tracer.predict_mastery(user_id, topic_id)
+        context = self.retriever.retrieve_context(topic.name, topic.subject.name)
+        formatted_profile = f"{profile_summary}\n\nREFERENCE MATERIAL:\n{context}" if context else profile_summary
+
+        prompt = f"Topic: {topic.name}\nSubject: {topic.subject.name}\nMastery: {topic_mastery}\nContext: {formatted_profile}"
+        system_msg = "Generate a structured study card JSON for this topic. Use the standard NeuroPlan schema."
+        
+        async for chunk in self.ai.stream_ai(prompt, system_msg):
+            yield f"data: {chunk}\n\n"

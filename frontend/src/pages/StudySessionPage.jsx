@@ -17,10 +17,15 @@ const StudySessionPage = () => {
   const { todayTasks, updateTaskStatus } = useTaskStore()
   
   const [task, setTask] = useState(null)
-  const [timeLeft, setTimeLeft] = useState(1500) // 25 minutes Pomodoro
+  const [timeLeft, setTimeLeft] = useState(1500)
   const [isActive, setIsActive] = useState(false)
   const [isProbeOpen, setIsProbeOpen] = useState(false)
+  const [sessionMode, setSessionMode] = useState('study') // study | break
+  const [notes, setNotes] = useState('')
+  const [lastSyncTime, setLastSyncTime] = useState(0)
   const [startTime] = useState(Date.now())
+  
+  const { updateHeartbeat, updateNotes } = useTaskStore()
 
   useEffect(() => {
     fetchTaskDetails()
@@ -30,8 +35,15 @@ const StudySessionPage = () => {
     try {
       const response = await apiClient.get(`/tasks/${taskId}`)
       setTask(response.data)
+      setNotes(response.data.notes || '')
       fetchCard(response.data.topic_id)
-      setTimeLeft(response.data.planned_minutes * 60)
+      
+      // Resume from saved progress if any
+      const savedMinutes = response.data.actual_minutes || 0
+      const plannedMinutes = response.data.planned_minutes || 25
+      const remainingSeconds = Math.max((plannedMinutes - savedMinutes) * 60, 0)
+      setTimeLeft(remainingSeconds > 0 ? remainingSeconds : plannedMinutes * 60)
+      setLastSyncTime(savedMinutes)
     } catch (err) {
       toast.error('Failed to load session')
       navigate('/')
@@ -43,13 +55,38 @@ const StudySessionPage = () => {
     if (isActive && timeLeft > 0) {
       interval = setInterval(() => {
         setTimeLeft((prev) => prev - 1)
+        
+        // Heartbeat Sync every 60 seconds
+        const elapsedMinutes = Math.floor((task.planned_minutes * 60 - (timeLeft - 1)) / 60)
+        if (elapsedMinutes > lastSyncTime) {
+          updateHeartbeat(taskId, elapsedMinutes)
+          setLastSyncTime(elapsedMinutes)
+        }
       }, 1000)
     } else if (timeLeft === 0) {
       setIsActive(false)
-      toast.success('Focus session complete!')
+      if (sessionMode === 'study') {
+        toast.success('Study session complete! Take a break.')
+        setSessionMode('break')
+        setTimeLeft(300) // 5 min break
+      } else {
+        toast.success('Break over! Back to deep work.')
+        setSessionMode('study')
+        setTimeLeft(1500)
+      }
     }
     return () => clearInterval(interval)
-  }, [isActive, timeLeft])
+  }, [isActive, timeLeft, sessionMode])
+
+  // Auto-save notes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (task && notes !== task.notes) {
+        updateNotes(taskId, notes)
+      }
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [notes])
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60)
@@ -95,22 +132,22 @@ const StudySessionPage = () => {
                 </div>
             </div>
 
-            <div className="flex items-center gap-6 bg-white/5 border border-white/10 px-6 py-3 rounded-[24px]">
-                <div className="text-3xl font-black tabular-nums tracking-tighter w-24">
+            <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-4 py-2 rounded-2xl md:px-6 md:py-3 md:rounded-[24px]">
+                <div className={clsx(
+                    "text-2xl md:text-3xl font-black tabular-nums tracking-tighter w-20 md:w-24",
+                    sessionMode === 'break' ? "text-emerald-400" : "text-white"
+                )}>
                     {formatTime(timeLeft)}
                 </div>
                 <div className="flex gap-2">
                     <button 
                         onClick={() => setIsActive(!isActive)}
-                        className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center hover:bg-primary-500 transition-all shadow-lg shadow-primary-500/20"
+                        className={clsx(
+                            "w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center transition-all shadow-lg",
+                            sessionMode === 'break' ? "bg-emerald-600 shadow-emerald-500/20" : "bg-primary-600 shadow-primary-500/20"
+                        )}
                     >
-                        {isActive ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white ml-1" />}
-                    </button>
-                    <button 
-                        onClick={() => setTimeLeft(task.planned_minutes * 60)}
-                        className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center hover:bg-white/20 transition-all"
-                    >
-                        <RotateCcw className="w-5 h-5" />
+                        {isActive ? <Pause className="w-4 h-4 md:w-5 md:h-5 fill-white" /> : <Play className="w-4 h-4 md:w-5 md:h-5 fill-white ml-1" />}
                     </button>
                 </div>
             </div>
@@ -118,6 +155,15 @@ const StudySessionPage = () => {
       </div>
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        {/* Study Notes - Mobile Friendly Placement */}
+        <div className="lg:hidden p-4 bg-white/5 border-b border-white/10">
+            <textarea 
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Capture neural insights here..."
+                className="w-full bg-transparent border-none focus:ring-0 text-sm italic text-white/60 resize-none h-16"
+            />
+        </div>
         {/* Main Content: Study Material */}
         <div className="flex-1 overflow-y-auto p-8 lg:p-16 custom-scrollbar">
           <div className="max-w-3xl mx-auto space-y-16">
@@ -234,13 +280,24 @@ const StudySessionPage = () => {
               </div>
             </div>
 
+            <div className="space-y-6">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40">Neural Notes</h4>
+              <textarea 
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Synthesize your understanding..."
+                className="w-full h-40 bg-white/5 border border-white/10 rounded-3xl p-6 text-sm text-white/80 focus:border-primary-500/50 transition-all resize-none"
+              />
+              <p className="text-[10px] text-white/20 text-center uppercase tracking-widest">Auto-syncing to cloud</p>
+            </div>
+
             <div className="pt-8 text-center space-y-4">
                 <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.4em]">Ready for Verification?</p>
                 <Button 
                     onClick={handleComplete}
                     className="w-full py-6 rounded-[28px] text-lg bg-primary-600 hover:bg-primary-500 shadow-2xl shadow-primary-600/20 group"
                 >
-                    Complete Study Session <ChevronRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                    Complete Session <ChevronRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
                 </Button>
             </div>
           </div>

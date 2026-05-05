@@ -26,9 +26,40 @@ class DecompositionService:
     async def decompose_subject(
         self, user_id: UUID, subject_id: UUID, context: str = ""
     ) -> List[Topic]:
-        """
-        Full pipeline with DKT-informed decomposition.
-        """
+        """Synchronous wrapper for legacy support or small subjects."""
+        return await self._run_decomposition(user_id, subject_id, context)
+
+    async def decompose_subject_task(
+        self, user_id: UUID, subject_id: UUID, context: str = ""
+    ):
+        """Background task for long-running decomposition."""
+        from app.models.subject import Subject
+        from datetime import datetime, timezone
+        
+        # 1. Mark as decomposing
+        stmt = select(Subject).where(Subject.id == subject_id)
+        res = await self.db.execute(stmt)
+        subject = res.scalar_one_or_none()
+        if subject:
+            subject.is_decomposing = True
+            await self.db.commit()
+            
+        try:
+            # 2. Run the actual work
+            await self._run_decomposition(user_id, subject_id, context)
+        finally:
+            # 3. Mark as finished
+            res = await self.db.execute(stmt)
+            subject = res.scalar_one_or_none()
+            if subject:
+                subject.is_decomposing = False
+                subject.last_decomposed_at = datetime.now(timezone.utc)
+                await self.db.commit()
+
+    async def _run_decomposition(
+        self, user_id: UUID, subject_id: UUID, context: str = ""
+    ) -> List[Topic]:
+        """Internal logic for decomposition."""
         # 1. Verify ownership
         stmt = select(Subject).where(
             Subject.id == subject_id, Subject.user_id == user_id
@@ -37,6 +68,19 @@ class DecompositionService:
         subject = result.scalar_one_or_none()
         if not subject:
             raise ValueError("Subject not found or unauthorized")
+
+        # 1.1 Idempotency Check: Don't decompose twice if already done
+        topic_count_stmt = select(Topic.id).where(Topic.subject_id == subject_id).limit(1)
+        existing_res = await self.db.execute(topic_count_stmt)
+        if existing_res.scalar_one_or_none() and not context.startswith("FORCE_REDO"):
+            logger.info(f"Subject {subject_id} already decomposed. Skipping.")
+            return await self._get_topics(subject_id)
+
+        # Handle FORCE_REDO
+        if context.startswith("FORCE_REDO"):
+            from sqlalchemy import delete
+            await self.db.execute(delete(Topic).where(Topic.subject_id == subject_id))
+            context = context.replace("FORCE_REDO", "").strip()
 
         # 2. Fetch Personalization Context
         user_profile = await self.profiler.get_user_cognitive_profile(user_id)
@@ -52,12 +96,14 @@ class DecompositionService:
         raw_subtopics = await self.ai.decompose_subject(
             subject_name=subject.name, 
             profile=user_profile,
-            mastery_scores={str(k): v for k, v in mastery_snapshot.items()} # Convert UUIDs to strings for JSON
+            context=context,
+            mastery_scores={str(k): v for k, v in mastery_snapshot.items()}, # Convert UUIDs to strings for JSON
+            target_level=subject.target_level
         )
 
         if not raw_subtopics:
             raise ValueError(
-                "AI decomposition returned no results."
+                "AI decomposition failed. Please ensure the local model is running or valid fallback API keys are configured."
             )
 
         # 4. Create Topic records
@@ -79,7 +125,10 @@ class DecompositionService:
         self.db.add_all(db_topics)
         await self.db.commit()
 
-        # Re-fetch to return
+        return await self._get_topics(subject_id)
+
+    async def _get_topics(self, subject_id: UUID) -> List[Topic]:
+        """Helper to fetch topics for a subject."""
         stmt = (
             select(Topic)
             .where(Topic.subject_id == subject_id)

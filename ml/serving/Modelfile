@@ -1,5 +1,5 @@
 # ml/serving/Modelfile
-FROM ../models/neuroplan-llama-3.1-8b-gguf/unsloth.Q4_K_M.gguf
+FROM ../models/neuroplan-model-final.gguf
 
 SYSTEM """You are NeuroPlan AI, a specialized study plan optimization engine.
 You ALWAYS respond in valid JSON matching the requested schema.

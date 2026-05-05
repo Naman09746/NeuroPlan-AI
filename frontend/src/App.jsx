@@ -11,6 +11,7 @@ import SettingsPage from '@/pages/SettingsPage'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import StudySessionPage from '@/pages/StudySessionPage'
+import OnboardingWizardPage from '@/pages/OnboardingWizardPage'
 import { useAuthStore } from '@/store/useAuthStore'
 import ErrorBoundary from '@/components/ui/ErrorBoundary'
 
@@ -54,6 +55,12 @@ function App() {
           <Route path="/test/:topicId" element={
             <ProtectedRoute>
               <TestPage />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/onboarding" element={
+            <ProtectedRoute>
+              <OnboardingWizardPage />
             </ProtectedRoute>
           } />
           

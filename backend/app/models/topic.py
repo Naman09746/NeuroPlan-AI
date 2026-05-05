@@ -21,14 +21,16 @@ class Topic(Base):
     difficulty: Mapped[str] = mapped_column(String(50), default="medium")
     estimated_hours: Mapped[float] = mapped_column(Float, default=1.0)
     knowledge_level: Mapped[float] = mapped_column(Float, default=0.0)
+    stability: Mapped[float] = mapped_column(Float, default=3.0) # Days until retention drops to 37%
+    last_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
     # Knowledge Graph Metadata
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
-    prerequisites: Mapped[dict] = mapped_column(JSON, default=[], server_default='[]')
-    key_concepts: Mapped[dict] = mapped_column(JSON, default=[], server_default='[]')
+    prerequisites: Mapped[List[str]] = mapped_column(JSON, default=[], server_default='[]')
+    key_concepts: Mapped[List[str]] = mapped_column(JSON, default=[], server_default='[]')
 
     # Relationships
     subject: Mapped["Subject"] = relationship(back_populates="topics")

@@ -17,6 +17,10 @@ class PreferenceUpdate(BaseModel):
     revision_strategy: Optional[str] = Field(None, pattern="^(standard|aggressive|relaxed)$")
     theme: Optional[str] = None
     timezone: Optional[str] = None
+    learning_style: Optional[str] = None
+    focus_metabolism: Optional[str] = None
+    notifications_enabled: Optional[bool] = None
+    privacy_mode: Optional[bool] = None
 
 @router.get("/me", response_model=UserResponse)
 async def read_user_me(
@@ -67,3 +71,20 @@ async def update_preferences(
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+@router.delete("/me/history", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_user_history(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Wipe all neural history (progress logs and test sessions)."""
+    from sqlalchemy import delete
+    from app.models.progress_log import ProgressLog
+    from app.models.test_session import TestSession
+    
+    await db.execute(delete(ProgressLog).where(ProgressLog.user_id == current_user.id))
+    await db.execute(delete(TestSession).where(TestSession.user_id == current_user.id))
+    
+    await db.commit()
+    return None

@@ -1,9 +1,10 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
+from typing import Optional
 
 from app.config import settings
 from app.db.session import SessionLocal, get_db
@@ -12,17 +13,25 @@ from app.models.user import User
 
 # Standard OAuth2 scheme for JWT
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/login"
+    tokenUrl=f"{settings.API_V1_STR}/auth/login",
+    auto_error=False
 )
 
 async def get_current_user(
     db: AsyncSession = Depends(get_db),
-    token: str = Depends(reusable_oauth2)
+    token: Optional[str] = Depends(reusable_oauth2),
+    query_token: Optional[str] = Query(None, alias="token")
 ) -> User:
     """
-    Validate the JWT token and return the current user.
-    Raises 401 if invalid.
+    Validate the JWT token (from Header or Query) and return the current user.
     """
+    token = token or query_token
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[ALGORITHM]

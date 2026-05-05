@@ -75,7 +75,13 @@ async def generate_plan(
     ai = AIClient()
     # Summarize raw plan for AI (just names and dates) to save tokens
     plan_summary = [{"topic": t["topic_name"], "date": str(t["date"])} for t in raw_tasks[:30]]
-    optimization_text = await ai.optimize_schedule(plan_summary, context=user_profile)
+    
+    try:
+        optimization_text = await ai.optimize_schedule(plan_summary, context=user_profile)
+    except Exception as e:
+        import logging
+        logging.getLogger("neuroplan.plans").warning(f"AI Optimization failed: {e}")
+        optimization_text = "AI optimization temporarily unavailable. Your plan has been generated using standard neuro-scientific spacing algorithms."
 
     # 5. Create the StudyPlan record
     db_plan = StudyPlan(

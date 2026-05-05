@@ -12,6 +12,9 @@ class TestSession(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     topic_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("topics.id", ondelete="CASCADE"), index=True)
     
+    # enum: micro|spaced|weekly|crucible
+    test_tier: Mapped[str] = mapped_column(String(50), default="micro")
+    
     # enum: easy|medium|hard
     difficulty: Mapped[str] = mapped_column(String(50), nullable=False)
     

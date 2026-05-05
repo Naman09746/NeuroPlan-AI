@@ -21,6 +21,8 @@ class QuickSetupRequest(BaseModel):
     subject_name: str
     color: str = "#6366f1"
     context: str = ""  # e.g., "VTU 5th semester", "Beginner level"
+    career_goal: Optional[str] = None
+    target_exam_date: Optional[str] = None # ISO format YYYY-MM-DD
 
 
 class QuickSetupResponse(BaseModel):
@@ -50,6 +52,16 @@ async def quick_setup(
         color=setup_in.color,
     )
     db.add(subject)
+    
+    # Update User Preferences if provided
+    new_prefs = {**current_user.preferences}
+    if setup_in.career_goal:
+        new_prefs["career_goal"] = setup_in.career_goal
+    if setup_in.target_exam_date:
+        new_prefs["target_exam_date"] = setup_in.target_exam_date
+    current_user.preferences = new_prefs
+    db.add(current_user)
+    
     await db.flush()
 
     # 2. AI Decompose

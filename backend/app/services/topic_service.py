@@ -11,8 +11,8 @@ class TopicService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_all_for_subject(self, user_id: UUID, subject_id: UUID) -> List[Topic]:
-        """Fetch all topics, ensuring the subject belongs to the requesting user."""
+    async def get_all_for_subject(self, user_id: UUID, subject_id: UUID, skip: int = 0, limit: int = 100) -> List[Topic]:
+        """Fetch all topics with pagination, ensuring subject ownership."""
         # Verify subject ownership
         subject_check = await self.db.execute(
             select(Subject).where(Subject.id == subject_id, Subject.user_id == user_id)
@@ -20,7 +20,13 @@ class TopicService:
         if not subject_check.scalar_one_or_none():
             return []
             
-        stmt = select(Topic).where(Topic.subject_id == subject_id).order_by(Topic.created_at.asc())
+        stmt = (
+            select(Topic)
+            .where(Topic.subject_id == subject_id)
+            .order_by(Topic.sort_order.asc())
+            .offset(skip)
+            .limit(limit)
+        )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
@@ -58,7 +64,37 @@ class TopicService:
         if knowledge_level is not None:
             db_obj.knowledge_level = knowledge_level
             
-        self.db.add(db_obj)
         await self.db.commit()
         await self.db.refresh(db_obj)
         return db_obj
+
+    async def get_knowledge_graph(self, user_id: UUID, subject_id: UUID) -> Dict[str, Any]:
+        """Generate nodes and edges for knowledge graph visualization."""
+        topics = await self.get_all_for_subject(user_id, subject_id, limit=500)
+        
+        nodes = []
+        edges = []
+        
+        # Build node map
+        name_to_id = {t.name.lower().strip(): str(t.id) for t in topics}
+        
+        for t in topics:
+            nodes.append({
+                "id": str(t.id),
+                "label": t.name,
+                "mastery": t.knowledge_level,
+                "difficulty": t.difficulty,
+                "is_completed": t.is_completed
+            })
+            
+            # Add edges based on prerequisites
+            if t.prerequisites:
+                for prereq in t.prerequisites:
+                    prereq_id = name_to_id.get(prereq.lower().strip())
+                    if prereq_id:
+                        edges.append({
+                            "source": prereq_id,
+                            "target": str(t.id)
+                        })
+        
+        return {"nodes": nodes, "edges": edges}

@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from typing import List, Dict, Any
 from uuid import UUID
 import math
+import heapq
 
 from app.models.topic import Topic
 from app.models.daily_task import DailyTask
@@ -95,23 +96,27 @@ class PlanGeneratorService:
                         graph[prereq_topic.id].append(topic.id)
                         in_degree[topic.id] += 1
         
-        # Kahn's algorithm
-        queue = [t for t in topics if in_degree[t.id] == 0]
-        # Sort queue by difficulty (hardest first within same level)
+        # Kahn's algorithm with Priority Queue (Heap)
+        # We want to process nodes with in_degree 0, prioritized by difficulty
         difficulty_order = {"hard": 0, "medium": 1, "easy": 2}
-        queue.sort(key=lambda t: difficulty_order.get(t.difficulty, 1))
+        
+        # Heap elements: (difficulty_rank, Topic object)
+        # Note: We wrap the Topic object in a class or use a proxy to avoid comparison errors if ranks are equal
+        queue = []
+        for t in topics:
+            if in_degree[t.id] == 0:
+                heapq.heappush(queue, (difficulty_order.get(t.difficulty, 1), t.id, t))
         
         sorted_topics = []
         while queue:
-            current = queue.pop(0)
+            rank, t_id, current = heapq.heappop(queue)
             sorted_topics.append(current)
             
             for neighbor_id in graph[current.id]:
                 in_degree[neighbor_id] -= 1
                 if in_degree[neighbor_id] == 0:
                     neighbor = next(t for t in topics if t.id == neighbor_id)
-                    queue.append(neighbor)
-                    queue.sort(key=lambda t: difficulty_order.get(t.difficulty, 1))
+                    heapq.heappush(queue, (difficulty_order.get(neighbor.difficulty, 1), neighbor.id, neighbor))
         
         # If some topics weren't included (cycle or missing dependency), 
         # append them at the end to ensure no topic is lost

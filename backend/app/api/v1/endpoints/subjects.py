@@ -17,10 +17,12 @@ router = APIRouter()
 async def read_subjects(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(deps.get_current_user),
+    skip: int = 0,
+    limit: int = 100,
 ) -> Any:
-    """List all subjects for the current user."""
+    """List all subjects for the current user (Paginated)."""
     service = SubjectService(db)
-    return await service.get_all_for_user(current_user.id)
+    return await service.get_all_for_user(current_user.id, skip=skip, limit=limit)
 
 @router.post("/", response_model=SubjectResponse)
 async def create_subject(
@@ -64,4 +66,13 @@ async def delete_subject(
     await db.delete(subject)
     await db.commit()
     return {"detail": "Subject deleted successfully"}
+
+@router.get("/recommendations")
+async def get_subject_recommendations(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Get AI-powered subject recommendations."""
+    service = SubjectService(db)
+    return await service.get_recommendations(current_user.id)
 

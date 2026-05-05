@@ -7,9 +7,11 @@ import statistics
 
 from app.models.daily_task import DailyTask
 from app.models.progress_log import ProgressLog
+from app.config import settings
 from app.models.subject import Subject
 from app.models.topic import Topic
 from app.models.study_plan import StudyPlan
+from app.services.ai_client import AIClient
 from app.services.base import BaseService
 
 class AnalyticsService(BaseService):
@@ -18,30 +20,39 @@ class AnalyticsService(BaseService):
 
     async def get_overview_stats(self, user_id: UUID) -> Dict[str, Any]:
         """Compute top-level summary for the dashboard."""
-        # Total tasks across all plans
-        stmt = select(func.count(DailyTask.id)).join(DailyTask.plan).where(StudyPlan.user_id == user_id)
-        total_res = await self.db.execute(stmt)
-        total_tasks = total_res.scalar() or 0
+        # 1. Unified Aggregation: Count Total, Done, and sum time in one pass
+        stmt = (
+            select(
+                func.count(DailyTask.id).label("total"),
+                func.sum(case((DailyTask.status == "done", 1), else_=0)).label("done"),
+                func.sum(DailyTask.actual_minutes).label("total_minutes")
+            )
+            .join(DailyTask.plan)
+            .where(StudyPlan.user_id == user_id)
+        )
+        
+        res = await self.db.execute(stmt)
+        row = res.one()
+        
+        total_tasks = row.total or 0
+        completed_tasks = row.done or 0
+        total_minutes = row.total_minutes or 0
 
-        # Completed tasks
-        stmt_done = stmt.where(DailyTask.status == "done")
-        done_res = await self.db.execute(stmt_done)
-        completed_tasks = done_res.scalar() or 0
-
-        # Calculation
         completion_rate = round((completed_tasks / total_tasks * 100), 1) if total_tasks > 0 else 0
         
-        # Total time spent
-        stmt_time = select(func.sum(DailyTask.actual_minutes)).join(DailyTask.plan).where(StudyPlan.user_id == user_id)
-        time_res = await self.db.execute(stmt_time)
-        total_minutes = time_res.scalar() or 0
+        # 2. AI Coaching Insights (Cached or generated)
+        from app.services.performance_coach import PerformanceCoach
+        coach = PerformanceCoach(self.db)
+        # Fetch most recent coaching session or generate a quick summary
+        insights = await coach.get_performance_summary(user_id)
 
         return {
             "total_tasks": total_tasks,
             "completed_tasks": completed_tasks,
             "completion_rate": completion_rate,
             "total_hours": round(total_minutes / 60, 1),
-            "streak": await self._calculate_current_streak(user_id)
+            "streak": await self._calculate_current_streak(user_id),
+            "insights": insights
         }
 
     async def get_efficiency_trends(self, user_id: UUID, days: int = 30) -> List[Dict[str, Any]]:
@@ -111,27 +122,123 @@ class AnalyticsService(BaseService):
         ]
 
     async def get_knowledge_heatmap(self, user_id: UUID) -> List[Dict[str, Any]]:
-        """Get aggregate knowledge levels across subjects."""
+        """Get aggregate knowledge levels across subjects with Forgetting Curve decay."""
+        from app.services.ml.mastery_engine import ForgettingCurve
+        
         stmt = (
             select(
                 Subject.name,
-                func.avg(Topic.knowledge_level).label("avg_knowledge")
+                Topic.knowledge_level,
+                Topic.stability,
+                Topic.last_reviewed_at
             )
             .join(Topic, Topic.subject_id == Subject.id)
             .where(Subject.user_id == user_id)
-            .group_by(Subject.id)
         )
         
         result = await self.db.execute(stmt)
         rows = result.all()
         
+        # Aggregate manually to apply decay to each topic first
+        subject_mastery: Dict[str, List[float]] = {}
+        now = datetime.now(rows[0].last_reviewed_at.tzinfo) if rows and rows[0].last_reviewed_at else datetime.now()
+        
+        for row in rows:
+            knowledge = row.knowledge_level
+            if row.last_reviewed_at:
+                days_passed = (now - row.last_reviewed_at).total_seconds() / 86400
+                retention = ForgettingCurve.compute_retention(days_passed, row.stability)
+                knowledge *= retention
+            
+            if row.name not in subject_mastery:
+                subject_mastery[row.name] = []
+            subject_mastery[row.name].append(knowledge)
+        
         return [
             {
-                "subject": r.name,
-                "mastery": round(r.avg_knowledge * 100, 1) if r.avg_knowledge is not None else 0
+                "subject": name,
+                "mastery": round((sum(levels) / len(levels)) * 100, 1) if levels else 0
             }
-            for r in rows
+            for name, levels in subject_mastery.items()
         ]
+
+    async def get_goal_progress(self, user_id: UUID) -> Dict[str, Any]:
+        """Calculate daily and weekly goal completion percentage."""
+        from app.models.user import User
+        stmt = select(User).where(User.id == user_id)
+        res = await self.db.execute(stmt)
+        user = res.scalar_one_or_none()
+        
+        if not user: return {}
+        
+        # Default goals if not set
+        daily_goal_mins = user.preferences.get("daily_goal_hours", 2) * 60
+        weekly_goal_mins = daily_goal_mins * 5 # Assuming 5 days a week target
+        
+        # Today's Progress
+        today = date.today()
+        stmt_today = (
+            select(func.sum(DailyTask.actual_minutes))
+            .join(DailyTask.plan)
+            .where(and_(
+                StudyPlan.user_id == user_id,
+                DailyTask.scheduled_date == today,
+                DailyTask.status == "done"
+            ))
+        )
+        res_today = await self.db.execute(stmt_today)
+        actual_today = res_today.scalar() or 0
+        
+        # Weekly Progress (last 7 days)
+        start_week = today - timedelta(days=6)
+        stmt_week = (
+            select(func.sum(DailyTask.actual_minutes))
+            .join(DailyTask.plan)
+            .where(and_(
+                StudyPlan.user_id == user_id,
+                DailyTask.scheduled_date >= start_week,
+                DailyTask.status == "done"
+            ))
+        )
+        res_week = await self.db.execute(stmt_week)
+        actual_week = res_week.scalar() or 0
+        
+        return {
+            "daily": {
+                "actual": actual_today,
+                "goal": daily_goal_mins,
+                "percentage": min(100, round((actual_today / daily_goal_mins * 100), 1)) if daily_goal_mins > 0 else 0
+            },
+            "weekly": {
+                "actual": actual_week,
+                "goal": weekly_goal_mins,
+                "percentage": min(100, round((actual_week / weekly_goal_mins * 100), 1)) if weekly_goal_mins > 0 else 0
+            }
+        }
+
+    async def get_countdown(self, user_id: UUID) -> Optional[Dict[str, Any]]:
+        """Calculate days remaining until the target exam/deadline."""
+        from app.models.user import User
+        stmt = select(User).where(User.id == user_id)
+        res = await self.db.execute(stmt)
+        user = res.scalar_one_or_none()
+        
+        if not user or not user.preferences.get("target_exam_date"):
+            return None
+            
+        try:
+            target_date = date.fromisoformat(user.preferences["target_exam_date"])
+            today = date.today()
+            days_left = (target_date - today).days
+            
+            return {
+                "label": user.preferences.get("exam_label", "Target Exam"),
+                "days_remaining": max(0, days_left),
+                "is_urgent": days_left < 7 and days_left >= 0,
+                "target_date": target_date.isoformat()
+            }
+        except Exception:
+            return None
 
     async def _calculate_current_streak(self, user_id: UUID) -> int:
         """Calculate consecutive days of study activity."""

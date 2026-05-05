@@ -1,7 +1,9 @@
-from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Any, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from uuid import UUID
+from app.core.limiter import limiter
 
 from app.api import deps
 from app.db.session import get_db
@@ -16,10 +18,12 @@ async def read_topics(
     subject_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(deps.get_current_user),
+    skip: int = 0,
+    limit: int = 100,
 ) -> Any:
-    """List all topics for a specific subject."""
+    """List all topics for a specific subject (Paginated)."""
     service = TopicService(db)
-    return await service.get_all_for_subject(current_user.id, subject_id)
+    return await service.get_all_for_subject(current_user.id, subject_id, skip=skip, limit=limit)
 
 @router.post("/bulk/{subject_id}", response_model=List[TopicResponse])
 async def bulk_create_topics(
@@ -52,26 +56,60 @@ async def update_topic_status(
         raise HTTPException(status_code=404, detail="Topic not found")
     return topic
 
-@router.post("/decompose/{subject_id}", response_model=List[TopicResponse])
+@router.post("/decompose/{subject_id}")
+@limiter.limit("2/minute")
 async def ai_decompose_subject(
-    *,
-    db: AsyncSession = Depends(get_db),
     subject_id: UUID,
+    background_tasks: BackgroundTasks,
+    request: Request,
     context: str = "",
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """
-    AI-powered subject decomposition.
-    Takes a subject name and uses LLM to generate all subtopics
-    with difficulty, time estimates, and learning order.
+    AI-powered subject decomposition (Background).
     """
+    from fastapi import BackgroundTasks
     from app.services.decomposition_service import DecompositionService
 
     service = DecompositionService(db)
-    try:
-        topics = await service.decompose_subject(
-            current_user.id, subject_id, context
-        )
-        return topics
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    
+    # 1. Start background task
+    background_tasks.add_task(
+        service.decompose_subject_task, 
+        current_user.id, 
+        subject_id, 
+        context
+    )
+    
+    return {"detail": "Decomposition started in background", "subject_id": str(subject_id)}
+
+@router.get("/decompose/{subject_id}/status")
+async def get_decomposition_status(
+    subject_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Poll the status of subject decomposition."""
+    from app.models.subject import Subject
+    stmt = select(Subject).where(Subject.id == subject_id, Subject.user_id == current_user.id)
+    result = await db.execute(stmt)
+    subject = result.scalar_one_or_none()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    
+    return {
+        "subject_id": str(subject.id),
+        "is_decomposing": subject.is_decomposing,
+        "last_decomposed_at": subject.last_decomposed_at.isoformat() if subject.last_decomposed_at else None
+    }
+
+@router.get("/graph/{subject_id}")
+async def get_subject_knowledge_graph(
+    subject_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Get nodes and edges for the subject's knowledge graph."""
+    service = TopicService(db)
+    return await service.get_knowledge_graph(current_user.id, subject_id)

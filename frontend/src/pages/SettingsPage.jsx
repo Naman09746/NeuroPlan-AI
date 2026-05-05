@@ -2,9 +2,34 @@ import React from 'react'
 import { Settings as SettingsIcon, User, Bell, Lock, Shield, Moon, Globe, LogOut } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { Button } from '@/components/ui/Button'
+import apiClient from '../api/client'
+import toast from 'react-hot-toast'
+import { useState, useEffect } from 'react'
+import { useConfigStore } from '@/store/useConfigStore'
 
 const SettingsPage = () => {
-    const { user, logout } = useAuthStore()
+    const { user, logout, fetchMe } = useAuthStore()
+    const { aiHealth, fetchAIHealth } = useConfigStore()
+    const [isUpdating, setIsUpdating] = useState(false)
+
+    useEffect(() => {
+        fetchAIHealth()
+    }, [])
+
+    const prefs = user?.preferences || {}
+
+    const updatePreference = async (key, value) => {
+        setIsUpdating(true)
+        try {
+            await apiClient.put('/users/me/preferences', { [key]: value })
+            await fetchMe()
+            toast.success('Preference synchronized')
+        } catch (err) {
+            toast.error('Failed to update preference')
+        } finally {
+            setIsUpdating(false)
+        }
+    }
 
     return (
         <div className="p-12 max-w-4xl mx-auto space-y-12 pb-20">
@@ -97,8 +122,10 @@ const SettingsPage = () => {
                                 {['Visual', 'Auditory', 'Reading', 'Kinesthetic'].map(style => (
                                     <button 
                                         key={style}
+                                        disabled={isUpdating}
+                                        onClick={() => updatePreference('learning_style', style.toLowerCase())}
                                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border-2 ${
-                                            style === 'Visual' ? 'bg-primary-50 border-primary-600 text-primary-600' : 'bg-surface-50 border-white text-surface-400 hover:border-surface-200'
+                                            prefs.learning_style === style.toLowerCase() ? 'bg-primary-50 border-primary-600 text-primary-600' : 'bg-surface-50 border-white text-surface-400 hover:border-surface-200'
                                         }`}
                                     >
                                         {style}
@@ -108,10 +135,16 @@ const SettingsPage = () => {
                         </div>
                         <div className="space-y-4">
                             <label className="text-[10px] font-black text-surface-400 uppercase tracking-widest pl-1">Primary Focus Window</label>
-                            <select className="w-full p-4 bg-surface-50 rounded-2xl border-2 border-white font-bold text-surface-900 appearance-none">
-                                <option>25 min (Pomodoro)</option>
-                                <option>50 min (Deep Work)</option>
-                                <option>90 min (Neural Deep Dive)</option>
+                            <select 
+                                value={prefs.focus_metabolism || '25'}
+                                disabled={isUpdating}
+                                onChange={(e) => updatePreference('focus_metabolism', e.target.value)}
+                                className="w-full p-4 bg-surface-50 rounded-2xl border-2 border-white font-bold text-surface-900 appearance-none"
+                            >
+                                <option value="15">15 min (Micro-learning)</option>
+                                <option value="25">25 min (Pomodoro)</option>
+                                <option value="50">50 min (Deep Work)</option>
+                                <option value="90">90 min (Neural Deep Dive)</option>
                             </select>
                         </div>
                     </div>
@@ -129,8 +162,12 @@ const SettingsPage = () => {
                                 <p className="text-xs text-surface-400 font-bold tracking-tight mt-0.5">Control the inference logic of your assistant.</p>
                             </div>
                         </div>
-                        <div className="px-3 py-1 bg-green-100 text-green-600 text-[10px] font-black rounded-full border border-green-200">
-                            CONNECTED
+                        <div className={`px-3 py-1 text-[10px] font-black rounded-full border ${
+                            aiHealth.status === 'connected' 
+                            ? 'bg-green-100 text-green-600 border-green-200' 
+                            : 'bg-red-100 text-red-600 border-red-200'
+                        }`}>
+                            {aiHealth.status === 'connected' ? 'CONNECTED' : 'DISCONNECTED'}
                         </div>
                     </div>
 
@@ -155,7 +192,9 @@ const SettingsPage = () => {
                                 <span className="text-[10px] font-black text-primary-400 tracking-widest uppercase">Active Neural Model</span>
                                 <span className="text-[10px] font-bold text-surface-400">v0.8.2-alpha</span>
                             </div>
-                            <code className="text-sm font-mono opacity-80 text-primary-100">neuroplan-llama-3.1-8b-instruct.gguf</code>
+                            <code className="text-sm font-mono opacity-80 text-primary-100">
+                                {aiHealth.model || 'neuroplan-llama-3.1-8b-instruct.gguf'}
+                            </code>
                         </div>
                     </div>
                 </div>
